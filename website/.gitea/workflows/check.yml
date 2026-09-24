@@ -1,0 +1,29 @@
+# Runs on every push and pull request to the website repo.
+# Once it passes and the PR is merged to main, site-sync publishes it within a minute.
+name: Check website
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate HTML
+        run: npx --yes html-validate@9 "**/*.html"
+
+      - name: Check internal links
+        run: |
+          # Every href="/..." or src="/..." must point at a file in the repo.
+          status=0
+          for f in $(find . -name '*.html' -not -path './node_modules/*'); do
+            for link in $(grep -oE '(href|src)="/[^"#?]*"' "$f" | cut -d'"' -f2); do
+              target=".${link}"
+              [ -e "$target" ] || [ -e "${target}.html" ] || [ -e "${target%/}/index.html" ] || {
+                echo "::error file=$f::broken link $link"; status=1; }
+            done
+          done
+          exit $status

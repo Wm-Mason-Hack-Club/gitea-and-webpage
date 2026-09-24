@@ -1,0 +1,13 @@
+# The smallest possible workflow: a good first "does CI work?" test.
+# Copy to .gitea/workflows/hello.yml in any repo and push.
+name: Hello CI
+
+on: [push]
+
+jobs:
+  hello:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "Hello from ${{ gitea.repository }} on ${{ gitea.ref_name }}"
+      - run: ls -la

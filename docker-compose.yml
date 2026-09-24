@@ -1,0 +1,151 @@
+# Hack Club stack: club website + Gitea + Gitea Actions (CI/CD)
+#
+#   Internet ──► Cloudflare ──► cloudflared ──► caddy ─┬─► git.comet-tech.org  → gitea
+#                                                      └─► hack.comet-tech.org → static site (synced from Gitea)
+#
+#   runner ──► dind   (CI jobs run inside an isolated Docker-in-Docker daemon,
+#                      never on the host's Docker)
+#
+# All settings come from .env (copy .env.example). See README.md.
+
+name: hackclub
+
+services:
+  # ---------------------------------------------------------------- Gitea
+  gitea:
+    image: gitea/gitea:1.27
+    restart: unless-stopped
+    environment:
+      USER_UID: "1000"
+      USER_GID: "1000"
+
+      GITEA__server__DOMAIN: ${GIT_HOST}
+      GITEA__server__ROOT_URL: https://${GIT_HOST}/
+      GITEA__server__HTTP_PORT: "3000"
+      # SSH doesn't pass through a plain Cloudflare tunnel; use HTTPS + access tokens.
+      GITEA__server__DISABLE_SSH: "true"
+
+      GITEA__database__DB_TYPE: sqlite3
+
+      GITEA__security__INSTALL_LOCK: "true"
+      # Only caddy can reach Gitea, so trust its X-Real-IP (real student IPs in logs).
+      GITEA__security__REVERSE_PROXY_TRUSTED_PROXIES: "*"
+
+      # Accounts: students may sign up, but a teacher must activate each account.
+      GITEA__service__DISABLE_REGISTRATION: ${GITEA_DISABLE_REGISTRATION:-false}
+      GITEA__service__REGISTER_MANUAL_CONFIRM: "true"
+      GITEA__service__ENABLE_CAPTCHA: "true"
+      GITEA__service__DEFAULT_ALLOW_CREATE_ORGANIZATION: "false"
+      # Student privacy: profiles/orgs only visible to signed-in users, emails hidden.
+      GITEA__service__DEFAULT_USER_VISIBILITY: limited
+      GITEA__service__DEFAULT_ORG_VISIBILITY: limited
+      GITEA__service__DEFAULT_KEEP_EMAIL_PRIVATE: "true"
+      GITEA__openid__ENABLE_OPENID_SIGNIN: "false"
+      GITEA__openid__ENABLE_OPENID_SIGNUP: "false"
+      GITEA__mailer__ENABLED: "false"
+
+      GITEA__repository__DEFAULT_PRIVATE: private
+      GITEA__repository__DEFAULT_BRANCH: main
+
+      # CI/CD. `uses: actions/checkout@v4` etc. resolve from github.com.
+      GITEA__actions__ENABLED: "true"
+      GITEA__actions__DEFAULT_ACTIONS_URL: github
+    volumes:
+      - ./data/gitea:/data
+    networks: [web]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/api/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ---------------------------------------------------------------- Reverse proxy + website
+  caddy:
+    image: caddy:2.11-alpine
+    restart: unless-stopped
+    environment:
+      SITE_HOST: ${SITE_HOST}
+      GIT_HOST: ${GIT_HOST}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - site:/srv/site:ro
+      - caddy-data:/data
+    # Localhost only, for testing from this machine. The public path is the tunnel.
+    ports:
+      - "127.0.0.1:${LOCAL_PORT:-8088}:80"
+    networks: [web]
+
+  # Pulls the website repo from Gitea and publishes it for caddy to serve.
+  site-sync:
+    build: ./site-sync
+    restart: unless-stopped
+    environment:
+      SITE_REPO_URL: ${SITE_REPO_URL:-http://gitea:3000/hackclub/website.git}
+      SITE_BRANCH: ${SITE_BRANCH:-main}
+      SITE_DIR: ${SITE_DIR:-}
+      SITE_REPO_TOKEN: ${SITE_REPO_TOKEN:-}
+      SYNC_INTERVAL: ${SYNC_INTERVAL:-60}
+    volumes:
+      - site:/site
+      - site-repo:/work
+      - ./website:/starter:ro
+    networks: [web]
+
+  # ---------------------------------------------------------------- Cloudflare tunnel
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on: [caddy]
+    networks: [web]
+
+  # ---------------------------------------------------------------- CI/CD
+  runner:
+    image: gitea/act_runner:0.6
+    restart: unless-stopped
+    depends_on: [dind]
+    environment:
+      CONFIG_FILE: /config.yaml
+      # The runner talks to Gitea through the public URL so that job containers
+      # (which live inside dind) get URLs they can actually resolve.
+      GITEA_INSTANCE_URL: https://${GIT_HOST}
+      GITEA_RUNNER_REGISTRATION_TOKEN: ${RUNNER_REGISTRATION_TOKEN:-}
+      GITEA_RUNNER_NAME: hackclub-runner-1
+      # "docker" is the name dind puts in its TLS certificate (see dind's network alias).
+      DOCKER_HOST: tcp://docker:2376
+      DOCKER_TLS_VERIFY: "1"
+      DOCKER_CERT_PATH: /certs/client
+    volumes:
+      - ./runner/config.yaml:/config.yaml:ro
+      - ./data/runner:/data
+      - dind-certs:/certs:ro
+    networks: [ci]
+
+  # A private Docker daemon just for CI jobs. Student workflows never touch the
+  # host's Docker (which also runs Gitea, the tunnel, etc.).
+  dind:
+    image: docker:29-dind
+    restart: unless-stopped
+    privileged: true
+    environment:
+      DOCKER_TLS_CERTDIR: /certs
+    volumes:
+      - dind-certs:/certs
+      - dind-data:/var/lib/docker
+    networks:
+      ci:
+        aliases: [docker]
+
+networks:
+  web:
+  ci:
+
+volumes:
+  site:
+  site-repo:
+  caddy-data:
+  dind-certs:
+  dind-data:

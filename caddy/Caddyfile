@@ -1,0 +1,49 @@
+{
+	# TLS is terminated by Cloudflare; the tunnel talks plain HTTP to us.
+	auto_https off
+	admin off
+}
+
+(common) {
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+	log {
+		output stdout
+		format console
+	}
+}
+
+# ---- Gitea ------------------------------------------------------------------
+http://{$GIT_HOST} {
+	import common
+
+	request_body {
+		max_size 512MB
+	}
+	reverse_proxy gitea:3000 {
+		header_up X-Forwarded-Proto https
+		# cloudflared passes the visitor's IP in CF-Connecting-IP.
+		header_up X-Real-IP {http.request.header.CF-Connecting-IP}
+		header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
+	}
+}
+
+# ---- Club website -------------------------------------------------------------
+# Also the fallback for any other Host (e.g. http://127.0.0.1:8088 when testing locally).
+http://{$SITE_HOST}, :80 {
+	import common
+
+	root * /srv/site
+	encode zstd gzip
+	try_files {path} {path}.html {path}/index.html
+	file_server
+
+	handle_errors 404 {
+		root * /srv/site
+		rewrite * /404.html
+		file_server
+	}
+}
