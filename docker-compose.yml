@@ -34,6 +34,9 @@ services:
       # Accounts: students may sign up, but a teacher must activate each account.
       GITEA__service__DISABLE_REGISTRATION: ${GITEA_DISABLE_REGISTRATION:-false}
       GITEA__service__REGISTER_MANUAL_CONFIRM: "true"
+      # Only these email domains can register (also enforced for admin-created accounts).
+      # Not verified by email — the teacher approving each account is the real check.
+      GITEA__service__EMAIL_DOMAIN_ALLOWLIST: ${GITEA_EMAIL_DOMAIN_ALLOWLIST:-masonohioschools.com}
       GITEA__service__ENABLE_CAPTCHA: "true"
       GITEA__service__DEFAULT_ALLOW_CREATE_ORGANIZATION: "false"
       # Student privacy: profiles/orgs only visible to signed-in users, emails hidden.

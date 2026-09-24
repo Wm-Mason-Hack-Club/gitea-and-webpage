@@ -132,8 +132,10 @@ reviews required.
 
 ### For students
 
-- **Sign up** at `https://git.comet-tech.org/user/sign_up`. Accounts stay inactive
-  until you approve them (see [docs/teacher-guide.md](docs/teacher-guide.md)).
+- **Hack Club students sign up** at `https://git.comet-tech.org/user/sign_up` with their
+  school email. Accounts stay inactive until you approve them.
+- **Class students** are created from your roster with `scripts/add-students.sh`
+  (see [docs/teacher-guide.md](docs/teacher-guide.md)).
 - **Cloning / pushing uses HTTPS**, not SSH (SSH doesn't pass through the tunnel):
   ```bash
   git clone https://git.comet-tech.org/<user>/<repo>.git
@@ -177,8 +179,9 @@ Choices made on purpose:
   2 CPUs / 2 GB RAM / 1 h each ([runner/config.yaml](runner/config.yaml)).
   `dind` itself must run `privileged`, so it's a strong boundary but not a perfect one.
   If you ever need stronger isolation, run the runner on a separate VM.
-- **Accounts need teacher approval**, sign-up has a CAPTCHA, and students can't create
-  organizations.
+- **Only `@masonohioschools.com` addresses** can have accounts. Self-sign-ups need
+  teacher approval (addresses aren't email-verified, so approval is the real check),
+  sign-up has a CAPTCHA, and students can't create organizations.
 - **Student privacy:** new users and orgs default to *limited* visibility (only visible to
   signed-in users), emails are hidden, and new repos default to private. Anonymous
   visitors only see things that were explicitly made public.
@@ -203,6 +206,9 @@ website/                  starter club website (push this into hackclub/website)
 examples/workflows/       sample CI workflows for student repos
 scripts/bootstrap.sh      first-time setup
 scripts/backup.sh         Gitea backups
+scripts/add-students.sh   bulk-create accounts from a roster CSV
+rosters/                  (git-ignored) roster CSVs and temporary passwords
 docs/teacher-guide.md     day-to-day administration
+AGENTS.md / CLAUDE.md     notes for AI assistants working on this repo
 data/                     (git-ignored) Gitea + runner data — this is what to back up
 ```

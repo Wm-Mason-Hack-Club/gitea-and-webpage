@@ -5,30 +5,64 @@ Day-to-day administration of the Hack Club Git server. All commands run from
 
 ## Student accounts
 
-### Approving sign-ups
+Only `@masonohioschools.com` email addresses can have accounts (setting:
+`GITEA_EMAIL_DOMAIN_ALLOWLIST` in `.env`). This applies to sign-ups **and** to accounts
+you create yourself. The address isn't verified by email (there's no mail server), so
+**your approval is the real check**. See [Future: email](#future-email).
 
-Students sign up at `https://git.comet-tech.org/user/sign_up`. New accounts are
-inactive until you activate them:
+There are two ways students get accounts.
+
+### Hack Club: students sign up themselves
+
+Students go to `https://git.comet-tech.org/user/sign_up` and use their school email.
+They see "You cannot register with your email address" if they use any other address.
+New accounts are **inactive** until you activate them:
 
 **Site Administration → Identity & Access → User Accounts** → click the user → check
 **Is Active** → **Update User Account**.
 
-Tip: ask students to sign up with a recognizable username (e.g. `first-lastinitial`) so
-you know whom you're approving.
+Because anyone can *type* a classmate's school email, approve only accounts you can
+match to a real student. Having students sign up during a meeting and approving them
+right there is the easiest way.
 
-### Creating accounts yourself (e.g. a whole class)
+### Classes: create accounts from your roster
 
-Turn off self-sign-up by setting `GITEA_DISABLE_REGISTRATION=true` in `.env`, then
-`docker compose up -d gitea`. Create accounts from a CSV of `username,email`:
+Put the roster in `./rosters/` (git-ignored, so student data never goes to GitHub) as a
+CSV with a header line:
 
-```bash
-while IFS=, read -r user email; do
-  docker compose exec -T -u git gitea gitea admin user create \
-    --username "$user" --email "$email" --random-password --must-change-password
-done < roster.csv
+```csv
+username,email,full name
+jsmith,jsmith@masonohioschools.com,Jane Smith
+bjones,bjones@masonohioschools.com,Bob Jones
 ```
 
-Each created user and their temporary password is printed; hand them out privately.
+A simple username scheme is the email's local part. Then:
+
+```bash
+./scripts/add-students.sh rosters/cyber-p3.csv
+```
+
+Each new account gets a random temporary password, which the student must change at
+first login. The passwords are written to `rosters/credentials-<date>.csv` (readable only
+by you). Hand them out privately, then **delete that file**. Usernames that already exist
+(e.g. a student who's also in Hack Club) are skipped, so re-running a roster is safe.
+
+**Add them to a class team in the same step.** First create the organization and team in
+Gitea (see [Organizing classes](#organizing-classes)). Then create an access token under
+**your avatar → Settings → Applications → Generate New Token**, with the
+*organization: read and write* permission, and run:
+
+```bash
+GITEA_TOKEN=<your token> ./scripts/add-students.sh rosters/cyber-p3.csv cyber-2026 students
+```
+
+Accounts created this way are already active; no approval needed.
+
+### Outside guests (mentors, a teacher from another district)
+
+The allowlist blocks non-school addresses even for admins. Temporarily add their domain in
+`.env` (`GITEA_EMAIL_DOMAIN_ALLOWLIST=masonohioschools.com,gmail.com`), run
+`docker compose up -d gitea`, create the account, then remove the domain again and re-run.
 
 ### Resetting a password
 
@@ -115,6 +149,20 @@ docker compose up -d
 
 The runner and website don't need backing up: the runner re-registers
 (see above) and the website is re-pulled from Gitea.
+
+## Future: email
+
+Without a mail server, Gitea can't verify email addresses or send "forgot password"
+links (you reset passwords by hand; see above). Options considered, in order of effort:
+
+1. **SMTP through a transactional email service** (Brevo, Resend, etc.): a free account,
+   a few SPF/DKIM DNS records for `comet-tech.org` in Cloudflare, and `GITEA__mailer__*`
+   settings. Enables password resets and `REGISTER_EMAIL_CONFIRM`. Note: Gitea can't
+   combine email confirmation with manual approval, so you'd trade "teacher approves" for
+   "school inbox proves it". Test that district Gmail doesn't mark it as spam.
+2. **"Sign in with Google"** (the district uses Google Workspace). Google blocks
+   under-18 Workspace for Education accounts from third-party apps unless district IT
+   allows the app, so this needs IT's help.
 
 ## Updating
 
